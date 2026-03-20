@@ -4,8 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Winterbons</title>
-<link rel="icon" href="/favicon.ico" sizes="any">
-<link rel="shortcut icon" href="/favicon.ico">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="shortcut icon" href="favicon.ico">
 
 <style>
 body {
@@ -75,8 +75,9 @@ canvas {
 const hostname = location.hostname;
 let frameSrc = null;
 
-if (hostname.includes("rtiq")) frameSrc = "frame.png";
-else if (hostname.includes("fam")) frameSrc = "frame1.png";
+if (hostname.includes("rtiq1")) frameSrc = "rtiq1.png";
+else if (hostname.includes("rtiq2")) frameSrc = "rtiq2.png";
+else if (hostname.includes("fam")) frameSrc = "fam.png";
 
 const msg = document.getElementById("msg");
 const wrap = document.getElementById("canvasWrap");
