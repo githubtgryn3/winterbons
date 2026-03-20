@@ -29,8 +29,11 @@ canvas {
     height: auto;
     background: white;
     border-radius: 12px;
-    touch-action: none;
     cursor: grab;
+
+    /* tambahan smooth */
+    touch-action: none;
+    image-rendering: auto;
 }
 
 button {
@@ -89,7 +92,7 @@ let lastDistance = null;
 
 // ===== FRAME =====
 const frame = new Image();
-frame.src = "frame.png"; // ganti jika perlu
+frame.src = "frame.png";
 
 // ===== DRAW =====
 function draw() {
@@ -139,7 +142,7 @@ fileInput.addEventListener('change', (e) => {
     img.src = URL.createObjectURL(file);
 });
 
-// klik untuk upload
+// klik upload
 canvas.addEventListener('click', () => {
     if (!userImage) fileInput.click();
 });
@@ -173,15 +176,27 @@ window.addEventListener('mousemove', (e) => {
     draw();
 });
 
-// zoom scroll
+// ===== ZOOM DESKTOP (ANCHOR CURSOR) =====
 canvas.addEventListener('wheel', (e) => {
     if (!userImage) return;
     e.preventDefault();
 
-    let zoom = -e.deltaY * 0.001;
-    scale += zoom;
+    const rect = canvas.getBoundingClientRect();
 
-    scale = Math.min(Math.max(0.2, scale), 5);
+    const mouseX = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const mouseY = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+    let zoom = -e.deltaY * 0.001;
+    let newScale = scale + zoom;
+
+    newScale = Math.min(Math.max(0.2, newScale), 5);
+
+    let scaleFactor = newScale / scale;
+
+    posX = mouseX - (mouseX - posX) * scaleFactor;
+    posY = mouseY - (mouseY - posY) * scaleFactor;
+
+    scale = newScale;
 
     draw();
 });
@@ -208,7 +223,7 @@ canvas.addEventListener('touchmove', (e) => {
     if (!userImage) return;
     e.preventDefault();
 
-    // DRAG 1 JARI
+    // DRAG
     if (e.touches.length === 1 && isDragging) {
         let x = e.touches[0].clientX;
         let y = e.touches[0].clientY;
@@ -220,14 +235,30 @@ canvas.addEventListener('touchmove', (e) => {
         lastY = y;
     }
 
-    // PINCH ZOOM
+    // PINCH ZOOM (ANCHOR CENTER)
     if (e.touches.length === 2) {
+        const rect = canvas.getBoundingClientRect();
+
         let newDist = getDistance(e.touches);
-        let zoom = newDist / lastDistance;
+        let zoomFactor = newDist / lastDistance;
 
-        scale *= zoom;
-        scale = Math.min(Math.max(0.2, scale), 5);
+        let newScale = scale * zoomFactor;
+        newScale = Math.min(Math.max(0.2, newScale), 5);
 
+        zoomFactor = newScale / scale;
+
+        let centerX = (
+            (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left
+        ) * (canvas.width / rect.width);
+
+        let centerY = (
+            (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top
+        ) * (canvas.height / rect.height);
+
+        posX = centerX - (centerX - posX) * zoomFactor;
+        posY = centerY - (centerY - posY) * zoomFactor;
+
+        scale = newScale;
         lastDistance = newDist;
     }
 
@@ -253,10 +284,8 @@ function getDistance(touches) {
 // =====================
 downloadBtn.addEventListener('click', () => {
     const link = document.createElement('a');
-
     link.download = generateFileName();
     link.href = canvas.toDataURL('image/png');
-
     link.click();
 });
 
@@ -264,12 +293,9 @@ function generateFileName() {
     const now = new Date();
 
     const day = String(now.getDate()).padStart(2, '0');
-
     const months = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
     const month = months[now.getMonth()];
-
     const year = now.getFullYear();
-
     const timestamp = Date.now();
 
     return `RTIQ_${day} ${month} ${year}_${timestamp}.png`;
