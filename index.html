@@ -4,6 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Winterbons</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="shortcut icon" href="/favicon.ico">
 
 <style>
 body {
@@ -84,19 +86,19 @@ const input = document.getElementById("fileInput");
 const btn = document.getElementById("downloadBtn");
 const title = document.getElementById("title");
 
-// DEFAULT: sembunyikan dulu semua yang tidak perlu
-title.style.display = "none";
+// DEFAULT → TITLE MUNCUL
+title.style.display = "block";
 btn.style.display = "none";
 
 // JIKA TIDAK ADA FRAME
 if (!frameSrc) {
   msg.style.display = "block";
+  title.style.display = "none";
   throw new Error("No frame");
 }
 
-// JIKA ADA FRAME → baru tampilkan UI
+// JIKA ADA FRAME
 wrap.style.display = "block";
-title.style.display = "block";
 
 canvas.width = 1080;
 canvas.height = 1080;
