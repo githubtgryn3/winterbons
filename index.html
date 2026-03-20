@@ -18,7 +18,7 @@
     position: relative;
     width: 100%;
     max-width: 420px;
-    aspect-ratio: 4/5;
+    aspect-ratio: 1/1;
     margin-top: 20px;
     background: #ddd;
     overflow: hidden;
@@ -63,7 +63,6 @@
 </div>
 
 <button id="downloadBtn">Download</button>
-
 <input type="file" id="fileInput" accept="image/*" hidden />
 
 <script>
@@ -88,28 +87,25 @@ if (!frameSrc) {
 
 wrap.style.display = "block";
 
+// FIXED CANVAS 1080x1080
+canvas.width = 1080;
+canvas.height = 1080;
+
 let frame = new Image();
 let userImg = new Image();
 let hasImage = false;
 
 let state = {
-  x: 0,
-  y: 0,
+  x: 540,
+  y: 540,
   scale: 1,
   rotation: 0
 };
 
-let touches = [];
-
-function resizeCanvas() {
-  canvas.width = wrap.clientWidth;
-  canvas.height = wrap.clientHeight;
-  draw();
-}
-window.addEventListener("resize", resizeCanvas);
+let prevTouches = [];
 
 frame.src = frameSrc;
-frame.onload = resizeCanvas;
+frame.onload = draw;
 
 wrap.addEventListener("click", () => {
   if (!hasImage) input.click();
@@ -122,17 +118,14 @@ input.onchange = e => {
   userImg.src = url;
   userImg.onload = () => {
     hasImage = true;
-    state.scale = 1;
-    state.rotation = 0;
-    state.x = canvas.width/2;
-    state.y = canvas.height/2;
+    state = { x:540, y:540, scale:1, rotation:0 };
     btn.classList.add("active");
     draw();
   };
 };
 
 function draw(dim=false) {
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.clearRect(0,0,1080,1080);
 
   if (hasImage) {
     ctx.save();
@@ -144,7 +137,7 @@ function draw(dim=false) {
   }
 
   if (dim) ctx.globalAlpha = 0.5;
-  ctx.drawImage(frame,0,0,canvas.width,canvas.height);
+  ctx.drawImage(frame,0,0,1080,1080);
   ctx.globalAlpha = 1;
 
   drawGuide();
@@ -155,21 +148,21 @@ function drawGuide() {
   const snap = [0,90,180,270].find(a => Math.abs(deg - a) < 5);
   if (snap !== undefined) {
     ctx.strokeStyle = "lime";
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 3;
     ctx.beginPath();
     if (snap % 180 === 0) {
-      ctx.moveTo(canvas.width/2,0);
-      ctx.lineTo(canvas.width/2,canvas.height);
+      ctx.moveTo(540,0);
+      ctx.lineTo(540,1080);
     } else {
-      ctx.moveTo(0,canvas.height/2);
-      ctx.lineTo(canvas.width,canvas.height/2);
+      ctx.moveTo(0,540);
+      ctx.lineTo(1080,540);
     }
     ctx.stroke();
   }
 }
 
 wrap.addEventListener("touchstart", e => {
-  touches = e.touches;
+  prevTouches = [...e.touches].map(t => ({x:t.clientX, y:t.clientY}));
   draw(true);
 });
 
@@ -177,34 +170,36 @@ wrap.addEventListener("touchmove", e => {
   e.preventDefault();
   if (!hasImage) return;
 
-  if (e.touches.length === 1) {
-    let dx = e.touches[0].movementX || 0;
-    let dy = e.touches[0].movementY || 0;
-    state.x += dx;
-    state.y += dy;
+  const touches = [...e.touches].map(t => ({x:t.clientX, y:t.clientY}));
+
+  // 1 FINGER DRAG
+  if (touches.length === 1 && prevTouches.length === 1) {
+    const dx = touches[0].x - prevTouches[0].x;
+    const dy = touches[0].y - prevTouches[0].y;
+
+    // scale movement to canvas ratio
+    const scaleFactor = 1080 / wrap.clientWidth;
+    state.x += dx * scaleFactor;
+    state.y += dy * scaleFactor;
   }
 
-  if (e.touches.length === 2) {
-    const [a,b] = e.touches;
-    const dx = b.clientX - a.clientX;
-    const dy = b.clientY - a.clientY;
-    const dist = Math.hypot(dx,dy);
+  // 2 FINGER ZOOM + ROTATE
+  if (touches.length === 2 && prevTouches.length === 2) {
+    const a = touches[0], b = touches[1];
+    const pa = prevTouches[0], pb = prevTouches[1];
 
-    if (touches.length === 2) {
-      const [pa,pb] = touches;
-      const pdx = pb.clientX - pa.clientX;
-      const pdy = pb.clientY - pa.clientY;
-      const pdist = Math.hypot(pdx,pdy);
+    const dist = Math.hypot(b.x-a.x, b.y-a.y);
+    const pdist = Math.hypot(pb.x-pa.x, pb.y-pa.y);
 
-      state.scale *= dist / pdist;
+    state.scale *= dist / pdist;
 
-      const angle = Math.atan2(dy,dx);
-      const pangle = Math.atan2(pdy,pdx);
-      state.rotation += angle - pangle;
-    }
+    const angle = Math.atan2(b.y-a.y, b.x-a.x);
+    const pangle = Math.atan2(pb.y-pa.y, pb.x-pa.x);
+
+    state.rotation += angle - pangle;
   }
 
-  touches = e.touches;
+  prevTouches = touches;
   draw(true);
 });
 
@@ -215,8 +210,7 @@ wrap.addEventListener("touchend", () => {
 
 function snapRotation() {
   const deg = state.rotation * 180 / Math.PI;
-  const snaps = [0,90,180,270];
-  snaps.forEach(s => {
+  [0,90,180,270].forEach(s => {
     if (Math.abs(deg - s) < 5) {
       state.rotation = s * Math.PI / 180;
     }
@@ -233,19 +227,12 @@ wrap.addEventListener("wheel", e => {
 btn.onclick = () => {
   if (!hasImage) return;
 
-  const out = document.createElement("canvas");
-  out.width = canvas.width;
-  out.height = canvas.height;
-  const octx = out.getContext("2d");
-
-  octx.drawImage(canvas,0,0);
-
   const link = document.createElement("a");
   const date = new Date();
   const name = `RTIQ_${date.toDateString()}_${Date.now()}.png`;
 
   link.download = name;
-  link.href = out.toDataURL();
+  link.href = canvas.toDataURL();
   link.click();
 };
 </script>
