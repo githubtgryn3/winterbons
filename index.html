@@ -259,41 +259,61 @@ canvas.addEventListener('touchmove', (e) => {
 
     // pinch + rotate
     if (e.touches.length === 2) {
-        const rect = canvas.getBoundingClientRect();
+		const rect = canvas.getBoundingClientRect();
 
-        let newDist = getDistance(e.touches);
-        let newAngle = getAngle(e.touches);
+		// posisi tengah pinch (screen → canvas)
+		const cx = ((e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left) * (canvas.width / rect.width);
+		const cy = ((e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top) * (canvas.height / rect.height);
 
-        let zoomFactor = newDist / lastDistance;
-        let newScale = Math.min(Math.max(0.2, scale * zoomFactor), 5);
-        zoomFactor = newScale / scale;
+		// hitung jarak & sudut baru
+		const newDist = getDistance(e.touches);
+		const newAngle = getAngle(e.touches);
 
-        // center
-        let cx = ((e.touches[0].clientX + e.touches[1].clientX)/2 - rect.left) * (canvas.width / rect.width);
-        let cy = ((e.touches[0].clientY + e.touches[1].clientY)/2 - rect.top) * (canvas.height / rect.height);
+		// === SCALE ===
+		let scaleFactor = newDist / lastDistance;
+		let newScale = scale * scaleFactor;
+		newScale = Math.min(Math.max(0.2, newScale), 5);
+		scaleFactor = newScale / scale;
 
-        posX = cx - (cx - posX) * zoomFactor;
-        posY = cy - (cy - posY) * zoomFactor;
+		// === ROTATION ===
+		let deltaAngle = newAngle - lastAngle;
 
-        scale = newScale;
+		// normalisasi biar tidak loncat
+		if (deltaAngle > Math.PI) deltaAngle -= 2 * Math.PI;
+		if (deltaAngle < -Math.PI) deltaAngle += 2 * Math.PI;
 
-        // ROTATION
-        let deltaAngle = newAngle - lastAngle;
-        rotation += deltaAngle;
+		let newRotation = rotation + deltaAngle;
 
-        // SNAP (0°, 90°, 180°, 270°)
-        const snap = Math.PI / 2;
-        const threshold = 0.1;
+		// === APPLY TRANSFORM DENGAN ANCHOR PINCH ===
+		// geser ke origin → transform → balik lagi
+		posX = cx - (cx - posX) * scaleFactor;
+		posY = cy - (cy - posY) * scaleFactor;
 
-        let snapped = Math.round(rotation / snap) * snap;
-        if (Math.abs(rotation - snapped) < threshold) {
-            rotation = snapped;
-        }
+		// rotasi terhadap center pinch
+		const dx = posX - cx;
+		const dy = posY - cy;
 
-        lastDistance = newDist;
-        lastAngle = newAngle;
-    }
+		const cos = Math.cos(deltaAngle);
+		const sin = Math.sin(deltaAngle);
 
+		posX = cx + (dx * cos - dy * sin);
+		posY = cy + (dx * sin + dy * cos);
+
+		scale = newScale;
+		rotation = newRotation;
+
+		// === SNAP ROTATION ===
+		const snap = Math.PI / 2;
+		const threshold = 0.12;
+
+		const snapped = Math.round(rotation / snap) * snap;
+		if (Math.abs(rotation - snapped) < threshold) {
+			rotation = snapped;
+		}
+
+		lastDistance = newDist;
+		lastAngle = newAngle;
+	}
     draw();
 });
 
