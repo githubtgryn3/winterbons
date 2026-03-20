@@ -6,43 +6,23 @@
 <title>Winterbons</title>
 
 <style>
-body {
-    margin: 0;
-    font-family: sans-serif;
-    background: #f5f5f5;
-    text-align: center;
-}
-
-h3 {
-    margin: 15px 0;
-    font-size: 16px;
-}
-
-#container {
-    width: 100%;
-    max-width: 420px;
-    margin: auto;
-}
-
+body { margin:0; font-family:sans-serif; background:#f5f5f5; text-align:center; }
+#container { max-width:420px; margin:auto; }
 canvas {
-    width: 100%;
-    height: auto;
-    background: white;
-    border-radius: 12px;
-    touch-action: none;
+    width:100%;
+    border-radius:12px;
+    background:white;
+    touch-action:none;
 }
-
 button {
-    margin: 15px;
-    padding: 14px;
-    width: calc(100% - 30px);
-    border: none;
-    border-radius: 10px;
-    font-size: 16px;
+    margin:15px;
+    padding:14px;
+    width:calc(100% - 30px);
+    border:none;
+    border-radius:10px;
 }
-
-button:disabled { background: #ccc; }
-button:not(:disabled) { background: #2ecc71; color: white; }
+button:disabled { background:#ccc; }
+button:not(:disabled) { background:#2ecc71; color:white; }
 </style>
 </head>
 
@@ -51,11 +31,11 @@ button:not(:disabled) { background: #2ecc71; color: white; }
 <h3>Klik Frame untuk Masukkan Foto</h3>
 
 <div id="container">
-    <canvas id="canvas" width="1080" height="1080"></canvas>
+<canvas id="canvas" width="1080" height="1080"></canvas>
 </div>
 
 <button id="downloadBtn" disabled>Silahkan Masukkan Foto</button>
-<input type="file" id="fileInput" accept="image/*" hidden>
+<input type="file" id="fileInput" hidden>
 
 <script>
 const canvas = document.getElementById('canvas');
@@ -73,16 +53,12 @@ let posY = 0;
 let rotation = 0;
 
 // gesture state
-let isDragging = false;
-let lastX = 0;
-let lastY = 0;
-
+let startDistance = 0;
+let startAngle = 0;
 let startScale = 1;
 let startRotation = 0;
 let startPosX = 0;
 let startPosY = 0;
-let startDistance = 0;
-let startAngle = 0;
 let startCenter = {x:0,y:0};
 
 // UX
@@ -92,56 +68,39 @@ let hasVibrated = false;
 let isInteracting = false;
 
 
-// =====================
-// FRAME
-// =====================
-const hostname = window.location.hostname;
-
-const frameMap = {
-    "rtiq.bernad.my.id": "frame.png",
-    "fam.bernad.my.id": "frame1.png"
-};
-
-let frameSrc = frameMap[hostname];
-
-if (!frameSrc) {
-    document.body.innerHTML = "<h2 style='margin-top:50px;'>Tidak ada frame untuk sub-domain ini!</h2>";
-    throw new Error();
-}
-
+// ================= FRAME =================
 const frame = new Image();
-frame.src = frameSrc;
+frame.src = "frame.png";
 
 
-// =====================
-// DRAW
-// =====================
-function draw() {
+// ================= DRAW =================
+function draw(){
     ctx.clearRect(0,0,canvas.width,canvas.height);
 
-    if (userImage) {
+    if(userImage){
         ctx.save();
         ctx.translate(canvas.width/2 + posX, canvas.height/2 + posY);
         ctx.rotate(rotation);
-        ctx.scale(scale, scale);
-        ctx.drawImage(userImage, -userImage.width/2, -userImage.height/2);
+        ctx.scale(scale,scale);
+        ctx.drawImage(userImage,-userImage.width/2,-userImage.height/2);
         ctx.restore();
     }
 
+    // dim frame saat interaksi
     ctx.save();
     ctx.globalAlpha = isInteracting ? 0.6 : 1;
     ctx.drawImage(frame,0,0,canvas.width,canvas.height);
     ctx.restore();
 
-    // SNAP GUIDE
-    if (snapActive) {
+    // garis snap
+    if(snapActive){
         ctx.save();
         ctx.translate(canvas.width/2, canvas.height/2);
         ctx.rotate(snapAngle);
 
         ctx.strokeStyle = "rgba(0,255,0,0.8)";
         ctx.lineWidth = 3;
-        ctx.setLineDash([12,8]);
+        ctx.setLineDash([10,10]);
 
         ctx.beginPath();
         ctx.moveTo(-canvas.width,0);
@@ -158,12 +117,10 @@ function draw() {
 }
 
 
-// =====================
-// LOAD IMAGE
-// =====================
-fileInput.addEventListener('change', e=>{
+// ================= LOAD =================
+fileInput.onchange = e=>{
     const file = e.target.files[0];
-    if (!file) return;
+    if(!file) return;
 
     const img = new Image();
     img.onload = ()=>{
@@ -177,29 +134,19 @@ fileInput.addEventListener('change', e=>{
         downloadBtn.disabled = false;
         downloadBtn.innerText = "Download";
     };
-
     img.src = URL.createObjectURL(file);
-});
+};
 
-canvas.addEventListener('click', ()=>{
-    if (!userImage) fileInput.click();
-});
+canvas.onclick = ()=>{ if(!userImage) fileInput.click(); };
 
 
-// =====================
-// DRAG
-// =====================
+// ================= TOUCH =================
 canvas.addEventListener('touchstart', e=>{
-    if (!userImage) return;
+    if(!userImage) return;
+
     isInteracting = true;
 
-    if (e.touches.length === 1) {
-        isDragging = true;
-        lastX = e.touches[0].clientX;
-        lastY = e.touches[0].clientY;
-    }
-
-    if (e.touches.length === 2) {
+    if(e.touches.length === 2){
         const rect = canvas.getBoundingClientRect();
 
         startDistance = getDistance(e.touches);
@@ -211,76 +158,68 @@ canvas.addEventListener('touchstart', e=>{
         startPosY = posY;
 
         startCenter = {
-            x: ((e.touches[0].clientX + e.touches[1].clientX)/2 - rect.left) * (canvas.width / rect.width),
-            y: ((e.touches[0].clientY + e.touches[1].clientY)/2 - rect.top) * (canvas.height / rect.height)
+            x: ((e.touches[0].clientX + e.touches[1].clientX)/2 - rect.left)*(canvas.width/rect.width),
+            y: ((e.touches[0].clientY + e.touches[1].clientY)/2 - rect.top)*(canvas.height/rect.height)
         };
     }
 });
 
+
 canvas.addEventListener('touchmove', e=>{
-    if (!userImage) return;
+    if(!userImage) return;
     e.preventDefault();
 
-    if (e.touches.length === 1 && isDragging) {
-        let x = e.touches[0].clientX;
-        let y = e.touches[0].clientY;
-
-        posX += x - lastX;
-        posY += y - lastY;
-
-        lastX = x;
-        lastY = y;
-    }
-
-    if (e.touches.length === 2) {
+    if(e.touches.length === 2){
         const rect = canvas.getBoundingClientRect();
 
-        const currentDistance = getDistance(e.touches);
-        const currentAngle = getAngle(e.touches);
+        const dist = getDistance(e.touches);
+        const angle = getAngle(e.touches);
 
-        const currentCenter = {
-            x: ((e.touches[0].clientX + e.touches[1].clientX)/2 - rect.left) * (canvas.width / rect.width),
-            y: ((e.touches[0].clientY + e.touches[1].clientY)/2 - rect.top) * (canvas.height / rect.height)
+        const center = {
+            x: ((e.touches[0].clientX + e.touches[1].clientX)/2 - rect.left)*(canvas.width/rect.width),
+            y: ((e.touches[0].clientY + e.touches[1].clientY)/2 - rect.top)*(canvas.height/rect.height)
         };
 
-        // SCALE
-        let scaleFactor = currentDistance / startDistance;
-        scale = Math.min(Math.max(0.2, startScale * scaleFactor), 5);
+        const scaleChange = Math.abs(dist - startDistance);
+        const angleChange = Math.abs(angle - startAngle);
 
-        // ROTATE
-        let deltaAngle = currentAngle - startAngle;
-        if (deltaAngle > Math.PI) deltaAngle -= 2*Math.PI;
-        if (deltaAngle < -Math.PI) deltaAngle += 2*Math.PI;
+        // ===== MODE DETECTION =====
+        if(scaleChange > angleChange * 100){
+            // ===== ZOOM =====
+            let factor = dist / startDistance;
+            scale = Math.min(Math.max(0.2, startScale * factor),5);
 
-        rotation = startRotation + deltaAngle;
+            posX = center.x - (startCenter.x - startPosX) * factor;
+            posY = center.y - (startCenter.y - startPosY) * factor;
 
-        // POSITION (anchor pinch)
-        const dx = startPosX;
-        const dy = startPosY;
-
-        const cos = Math.cos(deltaAngle);
-        const sin = Math.sin(deltaAngle);
-
-        posX = currentCenter.x - (startCenter.x - dx) * scaleFactor * cos + (startCenter.y - dy) * scaleFactor * sin;
-        posY = currentCenter.y - (startCenter.x - dx) * scaleFactor * sin - (startCenter.y - dy) * scaleFactor * cos;
-
-        // SNAP
-        const snap = Math.PI/2;
-        const target = Math.round(rotation/snap)*snap;
-        const diff = target - rotation;
-
-        if (Math.abs(diff) < 0.15) {
-            rotation += diff * 0.25;
-            snapActive = true;
-            snapAngle = target;
-
-            if (!hasVibrated && navigator.vibrate) {
-                navigator.vibrate(10);
-                hasVibrated = true;
-            }
-        } else {
             snapActive = false;
-            hasVibrated = false;
+        }else{
+            // ===== ROTATE =====
+            let delta = angle - startAngle;
+
+            if(delta > Math.PI) delta -= 2*Math.PI;
+            if(delta < -Math.PI) delta += 2*Math.PI;
+
+            rotation = startRotation + delta;
+
+            // SNAP
+            const snap = Math.PI/2;
+            const target = Math.round(rotation/snap)*snap;
+            const diff = target - rotation;
+
+            if(Math.abs(diff) < 0.15){
+                rotation += diff * 0.3;
+                snapActive = true;
+                snapAngle = target;
+
+                if(!hasVibrated && navigator.vibrate){
+                    navigator.vibrate(10);
+                    hasVibrated = true;
+                }
+            }else{
+                snapActive = false;
+                hasVibrated = false;
+            }
         }
     }
 
@@ -288,7 +227,6 @@ canvas.addEventListener('touchmove', e=>{
 });
 
 canvas.addEventListener('touchend', ()=>{
-    isDragging = false;
     isInteracting = false;
     snapActive = false;
     hasVibrated = false;
@@ -296,9 +234,7 @@ canvas.addEventListener('touchend', ()=>{
 });
 
 
-// =====================
-// HELPERS
-// =====================
+// ================= HELPER =================
 function getDistance(t){
     return Math.hypot(
         t[0].clientX - t[1].clientX,
@@ -314,24 +250,13 @@ function getAngle(t){
 }
 
 
-// =====================
-// DOWNLOAD
-// =====================
-downloadBtn.addEventListener('click', ()=>{
+// ================= DOWNLOAD =================
+downloadBtn.onclick = ()=>{
     const a = document.createElement('a');
-    a.download = generateFileName();
+    a.download = `RTIQ_${Date.now()}.png`;
     a.href = canvas.toDataURL('image/png');
     a.click();
-});
-
-function generateFileName(){
-    const now = new Date();
-    const day = String(now.getDate()).padStart(2,'0');
-    const months = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
-    const month = months[now.getMonth()];
-    const year = now.getFullYear();
-    return `RTIQ_${day} ${month} ${year}_${Date.now()}.png`;
-}
+};
 
 frame.onload = draw;
 </script>
