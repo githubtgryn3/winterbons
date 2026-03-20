@@ -1,352 +1,253 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Lite Frame Processor v2</title>
-    <script src="https://unpkg.com/fabric@5.3.0/dist/fabric.min.js"></script>
-    <style>
-        :root { --primary: #2563eb; --success: #22c55e; }
-        body { font-family: sans-serif; margin: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; min-height: 100vh; background: #f3f4f6; overflow: hidden; touch-action: none; padding-top: 20px; }
-        #app { text-align: center; width: 100%; max-width: 500px; padding: 10px; box-sizing: border-box; }
-        
-        /* Container untuk scaling CSS agar responsif di layar kecil */
-        .canvas-scaler {
-            width: 100%;
-            /* Menjaga aspect ratio 1:1 berdasarkan lebar container */
-            position: relative;
-            padding-bottom: 100%; 
-            height: 0;
-            overflow: hidden;
-            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
-            background: white;
-            border-radius: 8px;
-        }
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Twibbon Lite</title>
+<style>
+  body {
+    margin: 0;
+    font-family: sans-serif;
+    background: #f5f5f5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
 
-        /* Wrapper aktual Fabric.js */
-        .canvas-container { 
-            position: absolute !important;
-            top: 0;
-            left: 0;
-            width: 100% !important;
-            height: 100% !important;
-        }
+  #canvasWrap {
+    position: relative;
+    width: 100%;
+    max-width: 420px;
+    aspect-ratio: 4/5;
+    margin-top: 20px;
+    background: #ddd;
+    overflow: hidden;
+    touch-action: none;
+  }
 
-        /* Canvas internal yang di-scale oleh CSS */
-        canvas { 
-            width: 100% !important;
-            height: 100% !important;
-            /* Penting: matikan default touch action browser agar tidak konflik dengan pinch */
-            touch-action: none; 
-            user-select: none;
-        }
+  canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
 
-        #controls { margin-top: 20px; width: 100%; padding: 0 10px; box-sizing: border-box; }
-        button { background: var(--primary); color: white; border: none; padding: 15px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: opacity 0.3s; width: 100%; font-size: 16px; -webkit-tap-highlight-color: transparent; }
-        button:disabled { background: #9ca3af; cursor: not-allowed; }
-        
-        /* Garis Pandu Snap */
-        .guide-line { position: absolute; background: var(--success); display: none; z-index: 100; pointer-events: none; }
-        .guide-v { width: 4px; height: 100%; left: 50%; transform: translateX(-50%); }
-        .guide-h { height: 4px; width: 100%; top: 50%; transform: translateY(-50%); }
-        
-        .error-msg { color: #dc2626; font-weight: bold; margin-top: 50px;}
-        #input-file { display: none; }
-        
-        /* Overlay instruksi awal */
-        #tap-overlay {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.5); color: white;
-            display: flex; align-items: center; justify-content: center;
-            border-radius: 8px; z-index: 10; font-weight: bold; font-size: 1.2em;
-            pointer-events: none; /* Klik tembus ke canvas */
-        }
-    </style>
+  #downloadBtn {
+    margin: 20px;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 8px;
+    background: #222;
+    color: #fff;
+    font-size: 16px;
+    opacity: 0.5;
+  }
+
+  #downloadBtn.active {
+    opacity: 1;
+    cursor: pointer;
+  }
+
+  #msg {
+    margin-top: 50px;
+    font-size: 18px;
+    color: #333;
+  }
+</style>
 </head>
 <body>
 
-<div id="app">
-    <div id="main-ui" style="display:none;">
-        <div class="canvas-scaler">
-            <div id="tap-overlay">Tap untuk pilih foto</div>
-            <div id="guide-v" class="guide-line guide-v"></div>
-            <div id="guide-h" class="guide-line guide-h"></div>
-            <canvas id="c" width="1080" height="1080"></canvas>
-        </div>
-        <div id="controls">
-            <input type="file" id="input-file" accept="image/*">
-            <button id="download-btn" disabled>Download Gambar</button>
-            <p style="font-size: 14px; color: #666; margin-top: 15px; line-height: 1.4;">
-                Gunakan 1 jari untuk geser.<br>
-                Gunakan 2 jari untuk zoom & rotasi.
-            </p>
-        </div>
-    </div>
-    <div id="error-ui" class="error-msg" style="display:none;">
-        Tidak ada frame untuk sub-domain ini!
-    </div>
+<div id="msg" style="display:none">Tidak ada frame untuk sub-domain ini!</div>
+
+<div id="canvasWrap" style="display:none">
+  <canvas id="canvas"></canvas>
 </div>
 
+<button id="downloadBtn">Download</button>
+
+<input type="file" id="fileInput" accept="image/*" hidden />
+
 <script>
-    // Konfigurasi Canvas Fabric - Hardcode 1080
-    const C_SIZE = 1080;
-    const canvas = new fabric.Canvas('c', { 
-        preserveObjectStacking: true,
-        width: C_SIZE,
-        height: C_SIZE,
-        backgroundColor: '#fff',
-        allowTouchScrolling: false, // Matikan scroll browser saat interaksi canvas
-    });
+const hostname = location.hostname;
+let frameSrc = null;
 
-    const downloadBtn = document.getElementById('download-btn');
-    const inputFile = document.getElementById('input-file');
-    const guideV = document.getElementById('guide-v');
-    const guideH = document.getElementById('guide-h');
-    const tapOverlay = document.getElementById('tap-overlay');
-    
-    let frameImageURL = "";
-    let userPhotoObject = null;
-    let frameObject = null;
-    const hostname = window.location.hostname;
+if (hostname.includes("rtiq")) frameSrc = "frame.png";
+else if (hostname.includes("fam")) frameSrc = "frame1.png";
 
-    // --- 1. Logika Penentuan Frame (Sama seperti sebelumnya) ---
-    if (hostname.includes("rtiq.bernad.my.id")) {
-        frameImageURL = "frame.png";
-    } else if (hostname.includes("fam.bernad.my.id")) {
-        frameImageURL = "frame1.png";
+const msg = document.getElementById("msg");
+const wrap = document.getElementById("canvasWrap");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const input = document.getElementById("fileInput");
+const btn = document.getElementById("downloadBtn");
+
+if (!frameSrc) {
+  msg.style.display = "block";
+  btn.style.display = "none";
+  throw new Error("No frame");
+}
+
+wrap.style.display = "block";
+
+let frame = new Image();
+let userImg = new Image();
+let hasImage = false;
+
+let state = {
+  x: 0,
+  y: 0,
+  scale: 1,
+  rotation: 0
+};
+
+let touches = [];
+
+function resizeCanvas() {
+  canvas.width = wrap.clientWidth;
+  canvas.height = wrap.clientHeight;
+  draw();
+}
+window.addEventListener("resize", resizeCanvas);
+
+frame.src = frameSrc;
+frame.onload = resizeCanvas;
+
+wrap.addEventListener("click", () => {
+  if (!hasImage) input.click();
+});
+
+input.onchange = e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  userImg.src = url;
+  userImg.onload = () => {
+    hasImage = true;
+    state.scale = 1;
+    state.rotation = 0;
+    state.x = canvas.width/2;
+    state.y = canvas.height/2;
+    btn.classList.add("active");
+    draw();
+  };
+};
+
+function draw(dim=false) {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  if (hasImage) {
+    ctx.save();
+    ctx.translate(state.x, state.y);
+    ctx.rotate(state.rotation);
+    ctx.scale(state.scale, state.scale);
+    ctx.drawImage(userImg, -userImg.width/2, -userImg.height/2);
+    ctx.restore();
+  }
+
+  if (dim) ctx.globalAlpha = 0.5;
+  ctx.drawImage(frame,0,0,canvas.width,canvas.height);
+  ctx.globalAlpha = 1;
+
+  drawGuide();
+}
+
+function drawGuide() {
+  const deg = Math.round(state.rotation * 180 / Math.PI);
+  const snap = [0,90,180,270].find(a => Math.abs(deg - a) < 5);
+  if (snap !== undefined) {
+    ctx.strokeStyle = "lime";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    if (snap % 180 === 0) {
+      ctx.moveTo(canvas.width/2,0);
+      ctx.lineTo(canvas.width/2,canvas.height);
     } else {
-        // Mode DEV lokal (hapus jika deploy)
-        if(hostname === "localhost" || hostname === "127.0.0.1") frameImageURL = "frame.png"; 
-        else document.getElementById('error-ui').style.display = 'block';
+      ctx.moveTo(0,canvas.height/2);
+      ctx.lineTo(canvas.width,canvas.height/2);
     }
+    ctx.stroke();
+  }
+}
 
-    if (frameImageURL) {
-        document.getElementById('main-ui').style.display = 'block';
-        initApp();
+wrap.addEventListener("touchstart", e => {
+  touches = e.touches;
+  draw(true);
+});
+
+wrap.addEventListener("touchmove", e => {
+  e.preventDefault();
+  if (!hasImage) return;
+
+  if (e.touches.length === 1) {
+    let dx = e.touches[0].movementX || 0;
+    let dy = e.touches[0].movementY || 0;
+    state.x += dx;
+    state.y += dy;
+  }
+
+  if (e.touches.length === 2) {
+    const [a,b] = e.touches;
+    const dx = b.clientX - a.clientX;
+    const dy = b.clientY - a.clientY;
+    const dist = Math.hypot(dx,dy);
+
+    if (touches.length === 2) {
+      const [pa,pb] = touches;
+      const pdx = pb.clientX - pa.clientX;
+      const pdy = pb.clientY - pa.clientY;
+      const pdist = Math.hypot(pdx,pdy);
+
+      state.scale *= dist / pdist;
+
+      const angle = Math.atan2(dy,dx);
+      const pangle = Math.atan2(pdy,pdx);
+      state.rotation += angle - pangle;
     }
+  }
 
-    // --- 2. Inisialisasi Aplikasi ---
-    function initApp() {
-        // Konfigurasi kontrol global Fabric (biar kotak seleksi lebih besar & enak disentuh)
-        fabric.Object.prototype.set({
-            borderColor: '#2563eb',
-            cornerColor: '#2563eb',
-            cornerSize: 36, // Lebih besar untuk touch
-            transparentCorners: false,
-            borderScaleFactor: 2,
-            hasRotatingPoint: false, // Kita pakai 2 jari untuk rotasi, matikan handle default
-            padding: 0,
-        });
+  touches = e.touches;
+  draw(true);
+});
 
-        // Load Frame Gambar
-        fabric.Image.fromURL(frameImageURL, function(img) {
-            frameObject = img;
-            img.set({
-                selectable: false, // Tidak bisa dipilih/digeser
-                evented: true,    // Tapi bisa menerima event klik
-                width: C_SIZE,
-                height: C_SIZE,
-                originX: 'left',
-                originY: 'top',
-                objectCaching: false
-            });
-            canvas.add(img);
-            canvas.bringToFront(img);
-            
-            // Event klik pada area canvas/frame
-            canvas.on('mouse:down', handleCanvasClick);
-        }, { crossOrigin: 'anonymous' }); // Jaga-jaga jika gambar dari domain lain
+wrap.addEventListener("touchend", () => {
+  snapRotation();
+  draw(false);
+});
 
-        setupTouchInteraction();
-        setupSnapLogic();
+function snapRotation() {
+  const deg = state.rotation * 180 / Math.PI;
+  const snaps = [0,90,180,270];
+  snaps.forEach(s => {
+    if (Math.abs(deg - s) < 5) {
+      state.rotation = s * Math.PI / 180;
     }
+  });
+}
 
-    // --- 3. Logika Klik/Tap ---
-    function handleCanvasClick(opt) {
-        // Jika belum ada foto, trigger upload
-        if (!userPhotoObject) {
-            // Efek visual feedback
-            if(frameObject) {
-                frameObject.set('opacity', 0.5);
-                canvas.renderAll();
-                setTimeout(() => { frameObject.set('opacity', 1); canvas.renderAll(); }, 150);
-            }
-            inputFile.click();
-        } 
-        // JIKA SUDAH ADA FOTO: 
-        // Secara otomatis Fabric.js akan menangani pemilihan objek foto (jika user tap area transparan).
-        // User bisa memanipulasi foto yang terpilih.
-    }
+wrap.addEventListener("wheel", e => {
+  if (!hasImage) return;
+  e.preventDefault();
+  state.scale += e.deltaY * -0.001;
+  draw();
+});
 
-    // --- 4. Handle Upload Foto ---
-    inputFile.addEventListener('change', function(e) {
-        const file = e.target.files[0];
-        if (!file) return;
+btn.onclick = () => {
+  if (!hasImage) return;
 
-        const reader = new FileReader();
-        reader.onload = function(f) {
-            fabric.Image.fromURL(f.target.result, function(userImg) {
-                // Hapus foto lama jika ganti foto
-                if(userPhotoObject) canvas.remove(userPhotoObject);
+  const out = document.createElement("canvas");
+  out.width = canvas.width;
+  out.height = canvas.height;
+  const octx = out.getContext("2d");
 
-                userPhotoObject = userImg;
-                
-                // Set kontrol agar bisa diputar/zoom dengan 2 jari (gesture)
-                userImg.set({
-                    originX: 'center',
-                    originY: 'center',
-                    left: C_SIZE / 2,
-                    top: C_SIZE / 2,
-                    // Aktifkan gesture
-                    hasControls: true, 
-                    hasBorders: true,
-                });
-                
-                // Skala awal: penuhi kanvas (cover effect)
-                const scale = Math.max(C_SIZE / userImg.width, C_SIZE / userImg.height);
-                userImg.scale(scale);
-                
-                canvas.add(userImg);
-                
-                // Pastikan struktur tumpukan benar
-                if(frameObject) canvas.bringToFront(frameObject); 
-                userImg.sendToBack(); 
+  octx.drawImage(canvas,0,0);
 
-                // Auto-select foto agar langsung bisa di-pinch
-                canvas.setActiveObject(userImg);
-                
-                // Sembunyikan instruksi & aktifkan download
-                tapOverlay.style.display = 'none';
-                downloadBtn.disabled = false;
-                
-                canvas.renderAll();
-            });
-        };
-        reader.readAsDataURL(file);
-        // Reset input agar bisa upload file yang sama jika perlu
-        e.target.value = ''; 
-    });
+  const link = document.createElement("a");
+  const date = new Date();
+  const name = `RTIQ_${date.toDateString()}_${Date.now()}.png`;
 
-    // --- 5. Interaksi Touch (Multitouch Pinch/Zoom/Rotate) ---
-    function setupTouchInteraction() {
-        // Fabric.js secara default support pinch-zoom & rotate jika `hasControls` true.
-        // Namun kita tambahkan logic agar anchor point zoom selalu di tengah objek.
-        
-        canvas.on('touch:gesture', function(e) {
-            if (e.e.touches && e.e.touches.length === 2 && userPhotoObject) {
-                // Pastikan objek foto terpilih saat gesture mulai
-                if(canvas.getActiveObject() !== userPhotoObject) {
-                    canvas.setActiveObject(userPhotoObject);
-                }
-            }
-        });
-
-        // Support Mouse Wheel untuk Zoom (Desktop)
-        canvas.on('mouse:wheel', function(opt) {
-            if(!userPhotoObject) return;
-            
-            const delta = opt.e.deltaY;
-            let scaleFactor = 0.95;
-            if (delta < 0) scaleFactor = 1.05; // Zoom in
-
-            // Zoom berpusat pada tengah foto
-            const newScaleX = userPhotoObject.scaleX * scaleFactor;
-            const newScaleY = userPhotoObject.scaleY * scaleFactor;
-            
-            // Batasi zoom (jangan terlalu kecil/besar)
-            if(newScaleX > 0.1 && newScaleX < 10) {
-                userPhotoObject.scale(newScaleX);
-                canvas.renderAll();
-            }
-
-            opt.e.preventDefault();
-            opt.e.stopPropagation();
-        });
-    }
-
-    // --- 6. Snap Rotation Logic & Guides ---
-    function setupSnapLogic() {
-        canvas.on('object:rotating', function(e) {
-            const obj = e.target;
-            // Hanya berlaku untuk foto user
-            if(obj !== userPhotoObject) return;
-
-            const angle = obj.angle % 360;
-            // Normalize angle ke positif
-            const normAngle = angle < 0 ? angle + 360 : angle;
-            
-            const snapPoints = [0, 90, 180, 270, 360];
-            const threshold = 4; // Derajat toleransi snap
-
-            let snapped = false;
-            snapPoints.forEach(snap => {
-                if (Math.abs(normAngle - snap) < threshold) {
-                    obj.set('angle', snap === 360 ? 0 : snap);
-                    snapped = true;
-                }
-            });
-
-            if (snapped) {
-                // Tampilkan garis CSS (disesuaikan posisinya karena canvas internal 1080)
-                guideV.style.display = 'block';
-                guideH.style.display = 'block';
-                
-                // Feedback haptic ringan jika didukung browser mobile
-                if(navigator.vibrate) navigator.vibrate(20);
-            } else {
-                hideGuides();
-            }
-        });
-
-        canvas.on('mouse:up', hideGuides);
-        // Matikan guide saat user berhenti menyentuh
-        canvas.on('touch:drag:end', hideGuides); 
-
-        function hideGuides() {
-            guideV.style.display = 'none';
-            guideH.style.display = 'none';
-        }
-    }
-
-    // --- 7. Download Logic ---
-    downloadBtn.addEventListener('click', () => {
-        // 1. Hilangkan seleksi agar border biru tidak ikut terdownload
-        canvas.discardActiveObject().renderAll();
-        
-        // 2. Generate DataURL dengan ukuran asli (1080x1080)
-        // Fabric akan mengabaikan scaling CSS dan mengambil ukuran internal canvas
-        const dataURL = canvas.toDataURL({
-            format: 'png',
-            quality: 1.0,
-            multiplier: 1 // Pastikan multiplier 1 agar tetap 1080
-        });
-        
-        // 3. Penamaan File
-        const date = new Date();
-        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        const day = String(date.getDate()).padStart(2, '0');
-        const month = months[date.getMonth()];
-        const year = date.getFullYear();
-        const timestamp = Math.floor(Date.now() / 1000);
-        
-        const filename = `RTIQ_${day} ${month} ${year}_${timestamp}.png`;
-        
-        // 4. Trigger Download
-        const link = document.createElement('a');
-        link.download = filename;
-        link.href = dataURL;
-        // Hack untuk iOS Safari
-        if(navigator.userAgent.match('CriOS')) {
-             // Chrome iOS workaround
-        } else {
-             document.body.appendChild(link);
-             link.click();
-             document.body.removeChild(link);
-        }
-
-        // Pilih kembali objek setelah download (opsional)
-        if(userPhotoObject) canvas.setActiveObject(userPhotoObject).renderAll();
-    });
+  link.download = name;
+  link.href = out.toDataURL();
+  link.click();
+};
 </script>
 
 </body>
