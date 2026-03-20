@@ -2,54 +2,54 @@
 <html lang="id">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Twibbon Lite Mobile</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Twibbon Lite</title>
 
 <style>
-    body {
-        margin: 0;
-        font-family: sans-serif;
-        background: #f5f5f5;
-        text-align: center;
-    }
+body {
+    margin: 0;
+    font-family: sans-serif;
+    background: #f5f5f5;
+    text-align: center;
+}
 
-    h3 {
-        margin: 15px 0;
-        font-size: 16px;
-    }
+h3 {
+    margin: 15px 0;
+    font-size: 16px;
+}
 
-    #container {
-        width: 100%;
-        max-width: 420px;
-        margin: auto;
-        position: relative;
-    }
+#container {
+    width: 100%;
+    max-width: 420px;
+    margin: auto;
+}
 
-    canvas {
-        width: 100%;
-        height: auto;
-        background: white;
-        border-radius: 12px;
-        touch-action: none;
-    }
+canvas {
+    width: 100%;
+    height: auto;
+    background: white;
+    border-radius: 12px;
+    touch-action: none;
+    cursor: grab;
+}
 
-    button {
-        margin: 15px;
-        padding: 14px;
-        width: calc(100% - 30px);
-        border: none;
-        border-radius: 10px;
-        font-size: 16px;
-    }
+button {
+    margin: 15px;
+    padding: 14px;
+    width: calc(100% - 30px);
+    border: none;
+    border-radius: 10px;
+    font-size: 16px;
+}
 
-    button:disabled {
-        background: #ccc;
-    }
+button:disabled {
+    background: #ccc;
+}
 
-    button:not(:disabled) {
-        background: #2ecc71;
-        color: white;
-    }
+button:not(:disabled) {
+    background: #2ecc71;
+    color: white;
+}
 </style>
 </head>
 
@@ -58,7 +58,7 @@
 <h3>Klik Frame untuk Masukkan Foto</h3>
 
 <div id="container">
-    <canvas id="canvas" width="400" height="400"></canvas>
+    <canvas id="canvas" width="1080" height="1080"></canvas>
 </div>
 
 <button id="downloadBtn" disabled>Silahkan Masukkan Foto</button>
@@ -71,7 +71,6 @@ const ctx = canvas.getContext('2d');
 
 const fileInput = document.getElementById('fileInput');
 const downloadBtn = document.getElementById('downloadBtn');
-const container = document.getElementById('container');
 
 let userImage = null;
 
@@ -80,15 +79,17 @@ let scale = 1;
 let posX = 0;
 let posY = 0;
 
-// touch state
-let lastTouchDistance = null;
-let lastTouchCenter = null;
+// drag
 let isDragging = false;
+let lastX = 0;
+let lastY = 0;
+
+// touch
+let lastDistance = null;
 
 // ===== FRAME =====
 const frame = new Image();
-frame.crossOrigin = "anonymous";
-frame.src = "frame.png";
+frame.src = "frame.png"; // ganti jika perlu
 
 // ===== DRAW =====
 function draw() {
@@ -120,7 +121,12 @@ fileInput.addEventListener('change', (e) => {
     img.onload = () => {
         userImage = img;
 
-        scale = 1;
+        // auto fit
+        scale = Math.max(
+            canvas.width / img.width,
+            canvas.height / img.height
+        );
+
         posX = 0;
         posY = 0;
 
@@ -133,22 +139,68 @@ fileInput.addEventListener('change', (e) => {
     img.src = URL.createObjectURL(file);
 });
 
-// klik canvas
+// klik untuk upload
 canvas.addEventListener('click', () => {
     if (!userImage) fileInput.click();
 });
 
-// ===== TOUCH EVENTS =====
+
+// =====================
+// DESKTOP CONTROL
+// =====================
+canvas.addEventListener('mousedown', (e) => {
+    if (!userImage) return;
+    isDragging = true;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    canvas.style.cursor = "grabbing";
+});
+
+window.addEventListener('mouseup', () => {
+    isDragging = false;
+    canvas.style.cursor = "grab";
+});
+
+window.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+
+    posX += (e.clientX - lastX);
+    posY += (e.clientY - lastY);
+
+    lastX = e.clientX;
+    lastY = e.clientY;
+
+    draw();
+});
+
+// zoom scroll
+canvas.addEventListener('wheel', (e) => {
+    if (!userImage) return;
+    e.preventDefault();
+
+    let zoom = -e.deltaY * 0.001;
+    scale += zoom;
+
+    scale = Math.min(Math.max(0.2, scale), 5);
+
+    draw();
+});
+
+
+// =====================
+// TOUCH CONTROL (MOBILE)
+// =====================
 canvas.addEventListener('touchstart', (e) => {
     if (!userImage) return;
 
     if (e.touches.length === 1) {
         isDragging = true;
+        lastX = e.touches[0].clientX;
+        lastY = e.touches[0].clientY;
     }
 
     if (e.touches.length === 2) {
-        lastTouchDistance = getDistance(e.touches);
-        lastTouchCenter = getCenter(e.touches);
+        lastDistance = getDistance(e.touches);
     }
 });
 
@@ -156,27 +208,27 @@ canvas.addEventListener('touchmove', (e) => {
     if (!userImage) return;
     e.preventDefault();
 
-    // DRAG
+    // DRAG 1 JARI
     if (e.touches.length === 1 && isDragging) {
-        posX += e.touches[0].movementX || 0;
-        posY += e.touches[0].movementY || 0;
+        let x = e.touches[0].clientX;
+        let y = e.touches[0].clientY;
+
+        posX += (x - lastX);
+        posY += (y - lastY);
+
+        lastX = x;
+        lastY = y;
     }
 
     // PINCH ZOOM
     if (e.touches.length === 2) {
-        const newDistance = getDistance(e.touches);
-        const newCenter = getCenter(e.touches);
+        let newDist = getDistance(e.touches);
+        let zoom = newDist / lastDistance;
 
-        let zoom = newDistance / lastTouchDistance;
         scale *= zoom;
-
         scale = Math.min(Math.max(0.2, scale), 5);
 
-        posX += (newCenter.x - lastTouchCenter.x);
-        posY += (newCenter.y - lastTouchCenter.y);
-
-        lastTouchDistance = newDistance;
-        lastTouchCenter = newCenter;
+        lastDistance = newDist;
     }
 
     draw();
@@ -184,10 +236,10 @@ canvas.addEventListener('touchmove', (e) => {
 
 canvas.addEventListener('touchend', () => {
     isDragging = false;
-    lastTouchDistance = null;
+    lastDistance = null;
 });
 
-// ===== HELPER =====
+// helper
 function getDistance(touches) {
     return Math.hypot(
         touches[0].clientX - touches[1].clientX,
@@ -195,20 +247,34 @@ function getDistance(touches) {
     );
 }
 
-function getCenter(touches) {
-    return {
-        x: (touches[0].clientX + touches[1].clientX) / 2,
-        y: (touches[0].clientY + touches[1].clientY) / 2
-    };
-}
 
-// ===== DOWNLOAD =====
+// =====================
+// DOWNLOAD
+// =====================
 downloadBtn.addEventListener('click', () => {
     const link = document.createElement('a');
-    link.download = 'hasil.png';
+
+    link.download = generateFileName();
     link.href = canvas.toDataURL('image/png');
+
     link.click();
 });
+
+function generateFileName() {
+    const now = new Date();
+
+    const day = String(now.getDate()).padStart(2, '0');
+
+    const months = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
+    const month = months[now.getMonth()];
+
+    const year = now.getFullYear();
+
+    const timestamp = Date.now();
+
+    return `RTIQ_${day} ${month} ${year}_${timestamp}.png`;
+}
+
 
 // ===== INIT =====
 frame.onload = draw;
