@@ -5,70 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Twibbon Lite</title>
 <style>
-  body {
-    margin: 0;
-    font-family: sans-serif;
-    background: #f5f5f5;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-
-  #canvasWrap {
-    position: relative;
-    width: 100%;
-    max-width: 420px;
-    aspect-ratio: 1/1;
-    margin-top: 20px;
-    background: #ddd;
-    overflow: hidden;
-    touch-action: none;
-  }
-
-  canvas {
-    width: 100%;
-    height: 100%;
-    display: block;
-  }
-
-  #downloadBtn {
-    margin: 20px;
-    padding: 12px 20px;
-    border: none;
-    border-radius: 8px;
-    background: #222;
-    color: #fff;
-    font-size: 16px;
-    opacity: 0.5;
-  }
-
-  #downloadBtn.active {
-    opacity: 1;
-    cursor: pointer;
-  }
-
-  #msg {
-    margin-top: 50px;
-    font-size: 18px;
-    color: #333;
-  }
+  body { margin:0; font-family:sans-serif; background:#f5f5f5; display:flex; flex-direction:column; align-items:center; }
+  #canvasWrap { position:relative; width:100%; max-width:420px; aspect-ratio:1/1; margin-top:20px; background:#ddd; overflow:hidden; touch-action:none; }
+  canvas { width:100%; height:100%; display:block; }
+  #downloadBtn { margin:20px; padding:12px 20px; border:none; border-radius:8px; background:#222; color:#fff; font-size:16px; opacity:0.5; }
+  #downloadBtn.active { opacity:1; cursor:pointer; }
+  #msg { margin-top:50px; font-size:18px; color:#333; }
 </style>
 </head>
 <body>
 
 <div id="msg" style="display:none">Tidak ada frame untuk sub-domain ini!</div>
-
-<div id="canvasWrap" style="display:none">
-  <canvas id="canvas"></canvas>
-</div>
-
+<div id="canvasWrap" style="display:none"><canvas id="canvas"></canvas></div>
 <button id="downloadBtn">Download</button>
 <input type="file" id="fileInput" accept="image/*" hidden />
 
 <script>
 const hostname = location.hostname;
 let frameSrc = null;
-
 if (hostname.includes("rtiq")) frameSrc = "frame.png";
 else if (hostname.includes("fam")) frameSrc = "frame1.png";
 
@@ -79,12 +33,7 @@ const ctx = canvas.getContext("2d");
 const input = document.getElementById("fileInput");
 const btn = document.getElementById("downloadBtn");
 
-if (!frameSrc) {
-  msg.style.display = "block";
-  btn.style.display = "none";
-  throw new Error("No frame");
-}
-
+if (!frameSrc) { msg.style.display="block"; btn.style.display="none"; throw new Error("No frame"); }
 wrap.style.display = "block";
 
 canvas.width = 1080;
@@ -94,30 +43,23 @@ let frame = new Image();
 let userImg = new Image();
 let hasImage = false;
 
-let state = {
-  x: 540,
-  y: 540,
-  scale: 1,
-  rotation: 0
-};
-
+let state = { x:540, y:540, scale:1, rotation:0 };
 let prevTouches = [];
 let isTouching = false;
-let snapType = null; // 'vertical' | 'horizontal' | null
+let snapType = null;
+let lastSnap = null; // for vibration trigger
 
 frame.src = frameSrc;
 frame.onload = draw;
 
-wrap.addEventListener("click", () => {
-  if (!hasImage) input.click();
-});
+wrap.addEventListener("click", ()=>{ if(!hasImage) input.click(); });
 
-input.onchange = e => {
+input.onchange = e=>{
   const file = e.target.files[0];
-  if (!file) return;
+  if(!file) return;
   const url = URL.createObjectURL(file);
   userImg.src = url;
-  userImg.onload = () => {
+  userImg.onload = ()=>{
     hasImage = true;
     state = { x:540, y:540, scale:1, rotation:0 };
     btn.classList.add("active");
@@ -125,10 +67,10 @@ input.onchange = e => {
   };
 };
 
-function draw() {
+function draw(){
   ctx.clearRect(0,0,1080,1080);
 
-  if (hasImage) {
+  if(hasImage){
     ctx.save();
     ctx.translate(state.x, state.y);
     ctx.rotate(state.rotation);
@@ -137,22 +79,22 @@ function draw() {
     ctx.restore();
   }
 
-  if (isTouching) ctx.globalAlpha = 0.5;
+  if(isTouching) ctx.globalAlpha = 0.5;
   ctx.drawImage(frame,0,0,1080,1080);
   ctx.globalAlpha = 1;
 
-  if (isTouching && snapType) drawGuide();
+  if(isTouching && snapType) drawGuide();
 }
 
-function drawGuide() {
+function drawGuide(){
   ctx.strokeStyle = "lime";
   ctx.lineWidth = 3;
   ctx.beginPath();
 
-  if (snapType === 'vertical') {
+  if(snapType==='vertical'){
     ctx.moveTo(540,0);
     ctx.lineTo(540,1080);
-  } else if (snapType === 'horizontal') {
+  } else if(snapType==='horizontal'){
     ctx.moveTo(0,540);
     ctx.lineTo(1080,540);
   }
@@ -160,54 +102,71 @@ function drawGuide() {
   ctx.stroke();
 }
 
-function detectSnap() {
-  const deg = (state.rotation * 180 / Math.PI) % 360;
+function detectSnap(){
+  const deg = (state.rotation * 180/Math.PI) % 360;
 
-  const near = (target) => Math.abs(deg - target) < 5;
+  const snaps = [0,90,180,270];
+  let closest = null;
+  let minDiff = 999;
 
-  if (near(0) || near(180) || near(360)) {
-    snapType = 'vertical';
-  } else if (near(90) || near(270)) {
-    snapType = 'horizontal';
+  snaps.forEach(s=>{
+    let diff = Math.abs(deg - s);
+    if(diff < minDiff){ minDiff = diff; closest = s; }
+  });
+
+  // MAGNET EFFECT
+  if(minDiff < 8){
+    const targetRad = closest * Math.PI/180;
+    state.rotation += (targetRad - state.rotation) * 0.2; // smooth pull
+  }
+
+  // SNAP DETECTION (for guide + vibration)
+  if(minDiff < 5){
+    if(closest===0 || closest===180 || closest===360){ snapType='vertical'; }
+    else if(closest===90 || closest===270){ snapType='horizontal'; }
+
+    // VIBRATION (only once per snap)
+    if(lastSnap !== closest){
+      if(navigator.vibrate){ navigator.vibrate(10); }
+      lastSnap = closest;
+    }
   } else {
     snapType = null;
+    lastSnap = null;
   }
 }
 
-wrap.addEventListener("touchstart", e => {
+wrap.addEventListener("touchstart", e=>{
   isTouching = true;
-  prevTouches = [...e.touches].map(t => ({x:t.clientX, y:t.clientY}));
+  prevTouches = [...e.touches].map(t=>({x:t.clientX,y:t.clientY}));
   detectSnap();
   draw();
 });
 
-wrap.addEventListener("touchmove", e => {
+wrap.addEventListener("touchmove", e=>{
   e.preventDefault();
-  if (!hasImage) return;
+  if(!hasImage) return;
 
-  const touches = [...e.touches].map(t => ({x:t.clientX, y:t.clientY}));
+  const touches = [...e.touches].map(t=>({x:t.clientX,y:t.clientY}));
 
-  if (touches.length === 1 && prevTouches.length === 1) {
+  if(touches.length===1 && prevTouches.length===1){
     const dx = touches[0].x - prevTouches[0].x;
     const dy = touches[0].y - prevTouches[0].y;
-
     const scaleFactor = 1080 / wrap.clientWidth;
     state.x += dx * scaleFactor;
     state.y += dy * scaleFactor;
   }
 
-  if (touches.length === 2 && prevTouches.length === 2) {
-    const a = touches[0], b = touches[1];
-    const pa = prevTouches[0], pb = prevTouches[1];
+  if(touches.length===2 && prevTouches.length===2){
+    const a=touches[0], b=touches[1];
+    const pa=prevTouches[0], pb=prevTouches[1];
 
-    const dist = Math.hypot(b.x-a.x, b.y-a.y);
-    const pdist = Math.hypot(pb.x-pa.x, pb.y-pa.y);
+    const dist = Math.hypot(b.x-a.x,b.y-a.y);
+    const pdist = Math.hypot(pb.x-pa.x,pb.y-pa.y);
+    state.scale *= dist/pdist;
 
-    state.scale *= dist / pdist;
-
-    const angle = Math.atan2(b.y-a.y, b.x-a.x);
-    const pangle = Math.atan2(pb.y-pa.y, pb.x-pa.x);
-
+    const angle = Math.atan2(b.y-a.y,b.x-a.x);
+    const pangle = Math.atan2(pb.y-pa.y,pb.x-pa.x);
     state.rotation += angle - pangle;
   }
 
@@ -216,36 +175,33 @@ wrap.addEventListener("touchmove", e => {
   draw();
 });
 
-wrap.addEventListener("touchend", () => {
+wrap.addEventListener("touchend", ()=>{
   isTouching = false;
   snapRotation();
   snapType = null;
+  lastSnap = null;
   draw();
 });
 
-function snapRotation() {
-  const deg = state.rotation * 180 / Math.PI;
-  [0,90,180,270].forEach(s => {
-    if (Math.abs(deg - s) < 5) {
-      state.rotation = s * Math.PI / 180;
-    }
+function snapRotation(){
+  const deg = state.rotation * 180/Math.PI;
+  [0,90,180,270].forEach(s=>{
+    if(Math.abs(deg - s) < 5){ state.rotation = s * Math.PI/180; }
   });
 }
 
-wrap.addEventListener("wheel", e => {
-  if (!hasImage) return;
+wrap.addEventListener("wheel", e=>{
+  if(!hasImage) return;
   e.preventDefault();
   state.scale += e.deltaY * -0.001;
   draw();
 });
 
-btn.onclick = () => {
-  if (!hasImage) return;
-
+btn.onclick = ()=>{
+  if(!hasImage) return;
   const link = document.createElement("a");
   const date = new Date();
   const name = `RTIQ_${date.toDateString()}_${Date.now()}.png`;
-
   link.download = name;
   link.href = canvas.toDataURL();
   link.click();
