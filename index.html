@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Twibbon Lite</title>
+<title>Winterbons</title>
 
 <style>
 body {
@@ -30,8 +30,6 @@ canvas {
     background: white;
     border-radius: 12px;
     cursor: grab;
-
-    /* tambahan smooth */
     touch-action: none;
     image-rendering: auto;
 }
@@ -58,7 +56,7 @@ button:not(:disabled) {
 
 <body>
 
-<h3>Klik Frame untuk Masukkan Foto</h3>
+<h3 id="title">Klik Frame untuk Masukkan Foto</h3>
 
 <div id="container">
     <canvas id="canvas" width="1080" height="1080"></canvas>
@@ -74,6 +72,7 @@ const ctx = canvas.getContext('2d');
 
 const fileInput = document.getElementById('fileInput');
 const downloadBtn = document.getElementById('downloadBtn');
+const title = document.getElementById('title');
 
 let userImage = null;
 
@@ -90,11 +89,40 @@ let lastY = 0;
 // touch
 let lastDistance = null;
 
-// ===== FRAME =====
-const frame = new Image();
-frame.src = "frame.png";
 
-// ===== DRAW =====
+// =====================
+// SUBDOMAIN FRAME SYSTEM
+// =====================
+const hostname = window.location.hostname;
+
+const frameMap = {
+    "rtiq.bernad.my.id": "frame.png",
+    "fam.bernad.my.id": "frame1.png"
+};
+
+let frameSrc = frameMap[hostname];
+
+// jika tidak ada frame
+if (!frameSrc) {
+    document.body.innerHTML = `
+        <h2 style="margin-top:50px;font-family:sans-serif;">
+            Tidak ada frame untuk sub-domain ini!
+        </h2>
+    `;
+    throw new Error("Frame tidak ditemukan");
+}
+
+
+// =====================
+// FRAME LOAD
+// =====================
+const frame = new Image();
+frame.src = frameSrc;
+
+
+// =====================
+// DRAW
+// =====================
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -115,7 +143,10 @@ function draw() {
     ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
 }
 
-// ===== LOAD IMAGE =====
+
+// =====================
+// LOAD IMAGE
+// =====================
 fileInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -124,7 +155,6 @@ fileInput.addEventListener('change', (e) => {
     img.onload = () => {
         userImage = img;
 
-        // auto fit
         scale = Math.max(
             canvas.width / img.width,
             canvas.height / img.height
@@ -141,6 +171,7 @@ fileInput.addEventListener('change', (e) => {
 
     img.src = URL.createObjectURL(file);
 });
+
 
 // klik upload
 canvas.addEventListener('click', () => {
@@ -176,7 +207,8 @@ window.addEventListener('mousemove', (e) => {
     draw();
 });
 
-// ===== ZOOM DESKTOP (ANCHOR CURSOR) =====
+
+// ZOOM DESKTOP (ANCHOR CURSOR)
 canvas.addEventListener('wheel', (e) => {
     if (!userImage) return;
     e.preventDefault();
@@ -203,7 +235,7 @@ canvas.addEventListener('wheel', (e) => {
 
 
 // =====================
-// TOUCH CONTROL (MOBILE)
+// TOUCH CONTROL
 // =====================
 canvas.addEventListener('touchstart', (e) => {
     if (!userImage) return;
@@ -235,7 +267,7 @@ canvas.addEventListener('touchmove', (e) => {
         lastY = y;
     }
 
-    // PINCH ZOOM (ANCHOR CENTER)
+    // PINCH ZOOM
     if (e.touches.length === 2) {
         const rect = canvas.getBoundingClientRect();
 
@@ -270,7 +302,6 @@ canvas.addEventListener('touchend', () => {
     lastDistance = null;
 });
 
-// helper
 function getDistance(touches) {
     return Math.hypot(
         touches[0].clientX - touches[1].clientX,
