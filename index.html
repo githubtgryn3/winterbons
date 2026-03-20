@@ -87,7 +87,6 @@ if (!frameSrc) {
 
 wrap.style.display = "block";
 
-// FIXED CANVAS 1080x1080
 canvas.width = 1080;
 canvas.height = 1080;
 
@@ -103,6 +102,8 @@ let state = {
 };
 
 let prevTouches = [];
+let isTouching = false;
+let snapType = null; // 'vertical' | 'horizontal' | null
 
 frame.src = frameSrc;
 frame.onload = draw;
@@ -124,7 +125,7 @@ input.onchange = e => {
   };
 };
 
-function draw(dim=false) {
+function draw() {
   ctx.clearRect(0,0,1080,1080);
 
   if (hasImage) {
@@ -136,34 +137,48 @@ function draw(dim=false) {
     ctx.restore();
   }
 
-  if (dim) ctx.globalAlpha = 0.5;
+  if (isTouching) ctx.globalAlpha = 0.5;
   ctx.drawImage(frame,0,0,1080,1080);
   ctx.globalAlpha = 1;
 
-  drawGuide();
+  if (isTouching && snapType) drawGuide();
 }
 
 function drawGuide() {
-  const deg = Math.round(state.rotation * 180 / Math.PI);
-  const snap = [0,90,180,270].find(a => Math.abs(deg - a) < 5);
-  if (snap !== undefined) {
-    ctx.strokeStyle = "lime";
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    if (snap % 180 === 0) {
-      ctx.moveTo(540,0);
-      ctx.lineTo(540,1080);
-    } else {
-      ctx.moveTo(0,540);
-      ctx.lineTo(1080,540);
-    }
-    ctx.stroke();
+  ctx.strokeStyle = "lime";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+
+  if (snapType === 'vertical') {
+    ctx.moveTo(540,0);
+    ctx.lineTo(540,1080);
+  } else if (snapType === 'horizontal') {
+    ctx.moveTo(0,540);
+    ctx.lineTo(1080,540);
+  }
+
+  ctx.stroke();
+}
+
+function detectSnap() {
+  const deg = (state.rotation * 180 / Math.PI) % 360;
+
+  const near = (target) => Math.abs(deg - target) < 5;
+
+  if (near(0) || near(180) || near(360)) {
+    snapType = 'vertical';
+  } else if (near(90) || near(270)) {
+    snapType = 'horizontal';
+  } else {
+    snapType = null;
   }
 }
 
 wrap.addEventListener("touchstart", e => {
+  isTouching = true;
   prevTouches = [...e.touches].map(t => ({x:t.clientX, y:t.clientY}));
-  draw(true);
+  detectSnap();
+  draw();
 });
 
 wrap.addEventListener("touchmove", e => {
@@ -172,18 +187,15 @@ wrap.addEventListener("touchmove", e => {
 
   const touches = [...e.touches].map(t => ({x:t.clientX, y:t.clientY}));
 
-  // 1 FINGER DRAG
   if (touches.length === 1 && prevTouches.length === 1) {
     const dx = touches[0].x - prevTouches[0].x;
     const dy = touches[0].y - prevTouches[0].y;
 
-    // scale movement to canvas ratio
     const scaleFactor = 1080 / wrap.clientWidth;
     state.x += dx * scaleFactor;
     state.y += dy * scaleFactor;
   }
 
-  // 2 FINGER ZOOM + ROTATE
   if (touches.length === 2 && prevTouches.length === 2) {
     const a = touches[0], b = touches[1];
     const pa = prevTouches[0], pb = prevTouches[1];
@@ -199,13 +211,16 @@ wrap.addEventListener("touchmove", e => {
     state.rotation += angle - pangle;
   }
 
+  detectSnap();
   prevTouches = touches;
-  draw(true);
+  draw();
 });
 
 wrap.addEventListener("touchend", () => {
+  isTouching = false;
   snapRotation();
-  draw(false);
+  snapType = null;
+  draw();
 });
 
 function snapRotation() {
