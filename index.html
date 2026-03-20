@@ -1,443 +1,204 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Winterbons</title>
-
-<style>
-body {
-    margin: 0;
-    font-family: sans-serif;
-    background: #f5f5f5;
-    text-align: center;
-}
-
-h3 {
-    margin: 15px 0;
-    font-size: 16px;
-}
-
-#container {
-    width: 100%;
-    max-width: 420px;
-    margin: auto;
-}
-
-canvas {
-    width: 100%;
-    height: auto;
-    background: white;
-    border-radius: 12px;
-    cursor: grab;
-    touch-action: none;
-    image-rendering: auto;
-    transition: transform 0.08s;
-}
-
-button {
-    margin: 15px;
-    padding: 14px;
-    width: calc(100% - 30px);
-    border: none;
-    border-radius: 10px;
-    font-size: 16px;
-}
-
-button:disabled {
-    background: #ccc;
-}
-
-button:not(:disabled) {
-    background: #2ecc71;
-    color: white;
-}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Lite Frame Processor</title>
+    <script src="https://unpkg.com/fabric@5.3.0/dist/fabric.min.js"></script>
+    <style>
+        :root { --primary: #2563eb; --success: #22c55e; }
+        body { font-family: sans-serif; margin: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; background: #f3f4f6; overflow: hidden; touch-action: none; }
+        #app { text-align: center; width: 100%; max-width: 500px; padding: 20px; }
+        .canvas-container { position: relative; margin: 0 auto; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); background: white; cursor: crosshair; }
+        canvas { border-radius: 8px; }
+        #controls { margin-top: 20px; }
+        button { background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: opacity 0.3s; width: 100%; font-size: 16px; }
+        button:disabled { background: #9ca3af; cursor: not-allowed; }
+        .guide-line { position: absolute; background: var(--success); display: none; z-index: 10; pointer-events: none; }
+        .guide-v { width: 2px; height: 100%; left: 50%; transform: translateX(-50%); }
+        .guide-h { height: 2px; width: 100%; top: 50%; transform: translateY(-50%); }
+        .error-msg { color: #dc2626; font-weight: bold; }
+        #input-file { display: none; }
+    </style>
 </head>
-
 <body>
 
-<h3 id="title">Klik Frame untuk Masukkan Foto</h3>
-
-<div id="container">
-    <canvas id="canvas" width="1080" height="1080"></canvas>
+<div id="app">
+    <div id="main-ui" style="display:none;">
+        <div class="canvas-container" id="wrapper">
+            <div id="guide-v" class="guide-line guide-v"></div>
+            <div id="guide-h" class="guide-line guide-h"></div>
+            <canvas id="c"></canvas>
+        </div>
+        <div id="controls">
+            <input type="file" id="input-file" accept="image/*">
+            <button id="download-btn" disabled>Download Gambar</button>
+            <p style="font-size: 12px; color: #666; margin-top: 10px;">Sentuh frame untuk ganti foto. Gunakan 2 jari untuk zoom/rotate.</p>
+        </div>
+    </div>
+    <div id="error-ui" class="error-msg" style="display:none;">
+        Tidak ada frame untuk sub-domain ini!
+    </div>
 </div>
 
-<button id="downloadBtn" disabled>Silahkan Masukkan Foto</button>
-
-<input type="file" id="fileInput" accept="image/*" hidden>
-
 <script>
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
+    const canvas = new fabric.Canvas('c', { preserveObjectStacking: true });
+    const downloadBtn = document.getElementById('download-btn');
+    const inputFile = document.getElementById('input-file');
+    const guideV = document.getElementById('guide-v');
+    const guideH = document.getElementById('guide-h');
+    
+    let frameImage = "";
+    const hostname = window.location.hostname;
 
-const fileInput = document.getElementById('fileInput');
-const downloadBtn = document.getElementById('downloadBtn');
-const title = document.getElementById('title');
-
-let userImage = null;
-
-// transform
-let scale = 1;
-let posX = 0;
-let posY = 0;
-let rotation = 0;
-
-// drag
-let isDragging = false;
-let lastX = 0;
-let lastY = 0;
-
-// touch
-let lastDistance = null;
-let lastAngle = null;
-let lastCenter = null;
-
-// state
-let isTouching = false;
-let snapActive = false;
-
-// SNAP
-const SNAP_ANGLES = [0, Math.PI/2, Math.PI, 3*Math.PI/2];
-const SNAP_THRESHOLD = 0.05;
-
-
-// =====================
-// SUBDOMAIN FRAME SYSTEM
-// =====================
-const hostname = window.location.hostname;
-
-const frameMap = {
-    "rtiq.bernad.my.id": "frame.png",
-    "fam.bernad.my.id": "frame1.png"
-};
-
-let frameSrc = frameMap[hostname];
-
-// jika tidak ada frame
-if (!frameSrc) {
-    document.body.innerHTML = `
-        <h2 style="margin-top:50px;font-family:sans-serif;">
-            Tidak ada frame untuk sub-domain ini!
-        </h2>
-    `;
-    throw new Error("Frame tidak ditemukan");
-}
-
-
-// =====================
-// FRAME LOAD
-// =====================
-const frame = new Image();
-frame.src = frameSrc;
-
-
-// =====================
-// DRAW
-// =====================
-function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    if (userImage) {
-        ctx.save();
-
-        ctx.translate(canvas.width/2 + posX, canvas.height/2 + posY);
-        ctx.rotate(rotation);
-        ctx.scale(scale, scale);
-
-        ctx.drawImage(
-            userImage,
-            -userImage.width / 2,
-            -userImage.height / 2
-        );
-
-        ctx.restore();
+    // 1. Logika Penentuan Frame berdasarkan Domain
+    if (hostname.includes("rtiq.bernad.my.id")) {
+        frameImage = "frame.png";
+    } else if (hostname.includes("fam.bernad.my.id")) {
+        frameImage = "frame1.png";
+    } else {
+        // Mode development/lokal (hapus jika sudah deploy)
+        if(hostname === "localhost" || hostname === "127.0.0.1") frameImage = "frame.png"; 
+        else document.getElementById('error-ui').style.display = 'block';
     }
 
-    // dim frame saja
-    if (isTouching) ctx.globalAlpha = 0.6;
-    ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
-    ctx.globalAlpha = 1;
-
-    // highlight rotate snap
-    if (snapActive) {
-        ctx.save();
-        ctx.translate(canvas.width/2 + posX, canvas.height/2 + posY);
-
-        ctx.strokeStyle = "#2ecc71";
-        ctx.lineWidth = 4;
-
-        ctx.beginPath();
-        ctx.arc(0, 0, 220, 0, Math.PI * 2);
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.moveTo(0,0);
-        ctx.lineTo(0,-220);
-        ctx.stroke();
-
-        ctx.restore();
+    if (frameImage) {
+        document.getElementById('main-ui').style.display = 'block';
+        initApp();
     }
-}
 
+    function initApp() {
+        // Set ukuran canvas (misal 1080x1080 responsif)
+        const size = Math.min(window.innerWidth - 40, 500);
+        canvas.setWidth(size);
+        canvas.setHeight(size);
 
-// =====================
-// SNAP
-// =====================
-function applySnap() {
-    let snapped = false;
+        // Load Frame
+        fabric.Image.fromURL(frameImage, function(img) {
+            img.set({
+                selectable: false,
+                evented: true, // Agar bisa diklik
+                width: canvas.width,
+                height: canvas.height,
+                originX: 'left',
+                originY: 'top'
+            });
+            canvas.add(img);
+            canvas.bringToFront(img);
+            
+            // Efek Transparansi saat disentuh
+            img.on('mousedown', () => { 
+                if(!canvas.getActiveObject()) { // Jika klik frame (bukan foto)
+                    img.set('opacity', 0.5); 
+                    canvas.renderAll();
+                    inputFile.click(); 
+                }
+            });
+            
+            // Loop global mouseup untuk reset opacity
+            canvas.on('mouse:up', () => {
+                img.set('opacity', 1);
+                canvas.renderAll();
+            });
+        });
 
-    for (let a of SNAP_ANGLES) {
-        if (Math.abs(rotation - a) < SNAP_THRESHOLD) {
-            rotation = a;
-            snapped = true;
+        // Handle Upload Foto
+        inputFile.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
 
-            if (!snapActive) triggerHaptic();
-            snapActive = true;
-            break;
+            const reader = new FileReader();
+            reader.onload = function(f) {
+                fabric.Image.fromURL(f.target.result, function(userImg) {
+                    // Bersihkan foto lama jika ada
+                    const oldImg = canvas.getObjects().find(obj => obj !== canvas.getObjects()[0]);
+                    if(oldImg) canvas.remove(oldImg);
+
+                    userImg.set({
+                        originX: 'center',
+                        originY: 'center',
+                        left: canvas.width / 2,
+                        top: canvas.height / 2,
+                    });
+                    
+                    // Skala awal agar menutupi canvas
+                    userImg.scaleToWidth(canvas.width);
+                    
+                    canvas.add(userImg);
+                    userImg.sendToBack(); // Di bawah frame
+                    canvas.setActiveObject(userImg);
+                    downloadBtn.disabled = false;
+                });
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // Snap Rotation Logic & Guides
+        canvas.on('object:rotating', function(e) {
+            const obj = e.target;
+            const angle = obj.angle % 360;
+            const snapPoints = [0, 90, 180, 270, 360];
+            const threshold = 5;
+
+            let snapped = false;
+            snapPoints.forEach(snap => {
+                if (Math.abs(angle - snap) < threshold) {
+                    obj.set('angle', snap);
+                    snapped = true;
+                }
+            });
+
+            if (snapped) {
+                guideV.style.display = 'block';
+                guideH.style.display = 'block';
+            } else {
+                guideV.style.display = 'none';
+                guideH.style.display = 'none';
+            }
+        });
+
+        canvas.on('mouse:up', () => {
+            guideV.style.display = 'none';
+            guideH.style.display = 'none';
+        });
+
+        // Download Logic
+        downloadBtn.addEventListener('click', () => {
+            // Deselect objek agar border biru hilang di hasil download
+            canvas.discardActiveObject().renderAll();
+            
+            const dataURL = canvas.toDataURL({
+                format: 'png',
+                quality: 1
+            });
+            
+            const date = new Date();
+            const dateStr = date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, ' ');
+            const timestamp = Math.floor(Date.now() / 1000);
+            
+            const link = document.createElement('a');
+            link.download = `RTIQ_${dateStr}_${timestamp}.png`;
+            link.href = dataURL;
+            link.click();
+        });
+    }
+
+    // Support Scroll Zoom (Desktop)
+    canvas.on('mouse:wheel', function(opt) {
+        const delta = opt.e.deltaY;
+        let zoom = canvas.getZoom();
+        zoom *= 0.999 ** delta;
+        if (zoom > 20) zoom = 20;
+        if (zoom < 0.01) zoom = 0.01;
+        
+        const obj = canvas.getActiveObject();
+        if(obj && obj !== canvas.getObjects()[0]) {
+            obj.scale(obj.scaleX * (zoom / canvas.getZoom()));
+            canvas.renderAll();
         }
-    }
-
-    if (!snapped) snapActive = false;
-}
-
-
-// =====================
-// HAPTIC
-// =====================
-function triggerHaptic() {
-    if (navigator.vibrate) navigator.vibrate(10);
-
-    canvas.style.transform = "scale(0.995)";
-    setTimeout(() => canvas.style.transform = "scale(1)", 80);
-}
-
-
-// =====================
-// LOAD IMAGE
-// =====================
-fileInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const img = new Image();
-    img.onload = () => {
-        userImage = img;
-
-        scale = Math.max(
-            canvas.width / img.width,
-            canvas.height / img.height
-        );
-
-        posX = 0;
-        posY = 0;
-        rotation = 0;
-
-        draw();
-
-        downloadBtn.disabled = false;
-        downloadBtn.innerText = "Download";
-    };
-
-    img.src = URL.createObjectURL(file);
-});
-
-
-// klik upload
-canvas.addEventListener('click', () => {
-    if (!userImage) fileInput.click();
-});
-
-
-// =====================
-// DESKTOP CONTROL
-// =====================
-canvas.addEventListener('mousedown', (e) => {
-    if (!userImage) return;
-    isDragging = true;
-    lastX = e.clientX;
-    lastY = e.clientY;
-    canvas.style.cursor = "grabbing";
-});
-
-window.addEventListener('mouseup', () => {
-    isDragging = false;
-    canvas.style.cursor = "grab";
-});
-
-window.addEventListener('mousemove', (e) => {
-    if (!isDragging) return;
-
-    posX += (e.clientX - lastX);
-    posY += (e.clientY - lastY);
-
-    lastX = e.clientX;
-    lastY = e.clientY;
-
-    draw();
-});
-
-
-// =====================
-// ZOOM DESKTOP
-// =====================
-canvas.addEventListener('wheel', (e) => {
-    if (!userImage) return;
-    e.preventDefault();
-
-    const rect = canvas.getBoundingClientRect();
-
-    const mouseX = (e.clientX - rect.left) * (canvas.width / rect.width);
-    const mouseY = (e.clientY - rect.top) * (canvas.height / rect.height);
-
-    let zoom = -e.deltaY * 0.001;
-    let newScale = scale + zoom;
-
-    newScale = Math.min(Math.max(0.2, newScale), 5);
-
-    let scaleFactor = newScale / scale;
-
-    posX = mouseX - (mouseX - posX) * scaleFactor;
-    posY = mouseY - (mouseY - posY) * scaleFactor;
-
-    scale = newScale;
-
-    draw();
-});
-
-
-// =====================
-// TOUCH CONTROL
-// =====================
-canvas.addEventListener('touchstart', (e) => {
-    if (!userImage) return;
-
-    isTouching = true;
-
-    if (e.touches.length === 1) {
-        isDragging = true;
-        lastX = e.touches[0].clientX;
-        lastY = e.touches[0].clientY;
-    }
-
-    if (e.touches.length === 2) {
-        lastDistance = getDistance(e.touches);
-        lastAngle = getAngle(e.touches);
-        lastCenter = getCenter(e.touches);
-    }
-});
-
-canvas.addEventListener('touchmove', (e) => {
-    if (!userImage) return;
-    e.preventDefault();
-
-    // drag
-    if (e.touches.length === 1 && isDragging) {
-        let x = e.touches[0].clientX;
-        let y = e.touches[0].clientY;
-
-        posX += (x - lastX);
-        posY += (y - lastY);
-
-        lastX = x;
-        lastY = y;
-    }
-
-    // pinch + rotate + move
-    if (e.touches.length === 2) {
-        const rect = canvas.getBoundingClientRect();
-
-        let newCenter = getCenter(e.touches);
-        let newDist = getDistance(e.touches);
-        let newAngle = getAngle(e.touches);
-
-        // move ikut tengah jari
-        posX += (newCenter.x - lastCenter.x) * (canvas.width / rect.width);
-        posY += (newCenter.y - lastCenter.y) * (canvas.height / rect.height);
-
-        // zoom
-        let zoomFactor = newDist / lastDistance;
-        let newScale = scale * zoomFactor;
-        newScale = Math.min(Math.max(0.2, newScale), 5);
-
-        scale = newScale;
-        lastDistance = newDist;
-
-        // rotate
-        rotation += (newAngle - lastAngle);
-        lastAngle = newAngle;
-
-        lastCenter = newCenter;
-
-        applySnap();
-    }
-
-    draw();
-});
-
-canvas.addEventListener('touchend', () => {
-    isDragging = false;
-    lastDistance = null;
-    lastAngle = null;
-    lastCenter = null;
-
-    isTouching = false;
-    snapActive = false;
-
-    draw();
-});
-
-
-// =====================
-// HELPERS
-// =====================
-function getDistance(touches) {
-    return Math.hypot(
-        touches[0].clientX - touches[1].clientX,
-        touches[0].clientY - touches[1].clientY
-    );
-}
-
-function getAngle(touches) {
-    return Math.atan2(
-        touches[1].clientY - touches[0].clientY,
-        touches[1].clientX - touches[0].clientX
-    );
-}
-
-function getCenter(touches) {
-    return {
-        x: (touches[0].clientX + touches[1].clientX) / 2,
-        y: (touches[0].clientY + touches[1].clientY) / 2
-    };
-}
-
-
-// =====================
-// DOWNLOAD
-// =====================
-downloadBtn.addEventListener('click', () => {
-    const link = document.createElement('a');
-    link.download = generateFileName();
-    link.href = canvas.toDataURL('image/png');
-    link.click();
-});
-
-function generateFileName() {
-    const now = new Date();
-
-    const day = String(now.getDate()).padStart(2, '0');
-    const months = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
-    const month = months[now.getMonth()];
-    const year = now.getFullYear();
-    const timestamp = Date.now();
-
-    return `RTIQ_${day} ${month} ${year}_${timestamp}.png`;
-}
-
-
-// ===== INIT =====
-frame.onload = draw;
+        opt.e.preventDefault();
+        opt.e.stopPropagation();
+    });
 </script>
 
 </body>
