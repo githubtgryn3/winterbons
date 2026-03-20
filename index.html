@@ -31,7 +31,6 @@ canvas {
     border-radius: 12px;
     cursor: grab;
     touch-action: none;
-    image-rendering: auto;
 }
 
 button {
@@ -43,14 +42,8 @@ button {
     font-size: 16px;
 }
 
-button:disabled {
-    background: #ccc;
-}
-
-button:not(:disabled) {
-    background: #2ecc71;
-    color: white;
-}
+button:disabled { background: #ccc; }
+button:not(:disabled) { background: #2ecc71; color: white; }
 </style>
 </head>
 
@@ -63,7 +56,6 @@ button:not(:disabled) {
 </div>
 
 <button id="downloadBtn" disabled>Silahkan Masukkan Foto</button>
-
 <input type="file" id="fileInput" accept="image/*" hidden>
 
 <script>
@@ -81,18 +73,23 @@ let posX = 0;
 let posY = 0;
 let rotation = 0;
 
-// drag
+// state
 let isDragging = false;
 let lastX = 0;
 let lastY = 0;
 
-// touch
 let lastDistance = null;
 let lastAngle = null;
 
+// UX state
+let snapActive = false;
+let snapAngle = 0;
+let hasVibrated = false;
+let isInteracting = false;
+
 
 // =====================
-// SUBDOMAIN FRAME
+// FRAME SUBDOMAIN
 // =====================
 const hostname = window.location.hostname;
 
@@ -118,30 +115,52 @@ frame.src = frameSrc;
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    // image
     if (userImage) {
         ctx.save();
-
-        ctx.translate(canvas.width / 2 + posX, canvas.height / 2 + posY);
+        ctx.translate(canvas.width/2 + posX, canvas.height/2 + posY);
         ctx.rotate(rotation);
         ctx.scale(scale, scale);
 
-        ctx.drawImage(
-            userImage,
-            -userImage.width / 2,
-            -userImage.height / 2
-        );
-
+        ctx.drawImage(userImage, -userImage.width/2, -userImage.height/2);
         ctx.restore();
     }
 
+    // frame (dim saat interaksi)
+    ctx.save();
+    ctx.globalAlpha = isInteracting ? 0.6 : 1;
     ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
+    ctx.restore();
+
+    // SNAP GUIDE
+    if (snapActive) {
+        ctx.save();
+        ctx.translate(canvas.width/2, canvas.height/2);
+        ctx.rotate(snapAngle);
+
+        ctx.strokeStyle = "rgba(0,255,0,0.8)";
+        ctx.lineWidth = 3;
+        ctx.setLineDash([12, 8]);
+
+        ctx.beginPath();
+        ctx.moveTo(-canvas.width, 0);
+        ctx.lineTo(canvas.width, 0);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(0, -canvas.height);
+        ctx.lineTo(0, canvas.height);
+        ctx.stroke();
+
+        ctx.restore();
+    }
 }
 
 
 // =====================
 // LOAD IMAGE
 // =====================
-fileInput.addEventListener('change', (e) => {
+fileInput.addEventListener('change', e => {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -149,14 +168,8 @@ fileInput.addEventListener('change', (e) => {
     img.onload = () => {
         userImage = img;
 
-        scale = Math.max(
-            canvas.width / img.width,
-            canvas.height / img.height
-        );
-
-        posX = 0;
-        posY = 0;
-        rotation = 0;
+        scale = Math.max(canvas.width/img.width, canvas.height/img.height);
+        posX = posY = rotation = 0;
 
         draw();
 
@@ -175,20 +188,28 @@ canvas.addEventListener('click', () => {
 // =====================
 // DESKTOP DRAG
 // =====================
-canvas.addEventListener('mousedown', (e) => {
+canvas.addEventListener('mousedown', e => {
     if (!userImage) return;
     isDragging = true;
+    isInteracting = true;
+
     lastX = e.clientX;
     lastY = e.clientY;
 });
 
-window.addEventListener('mouseup', () => isDragging = false);
+window.addEventListener('mouseup', () => {
+    isDragging = false;
+    isInteracting = false;
+    snapActive = false;
+    hasVibrated = false;
+    draw();
+});
 
-window.addEventListener('mousemove', (e) => {
+window.addEventListener('mousemove', e => {
     if (!isDragging) return;
 
-    posX += (e.clientX - lastX);
-    posY += (e.clientY - lastY);
+    posX += e.clientX - lastX;
+    posY += e.clientY - lastY;
 
     lastX = e.clientX;
     lastY = e.clientY;
@@ -200,12 +221,13 @@ window.addEventListener('mousemove', (e) => {
 // =====================
 // DESKTOP ZOOM
 // =====================
-canvas.addEventListener('wheel', (e) => {
+canvas.addEventListener('wheel', e => {
     if (!userImage) return;
     e.preventDefault();
 
-    const rect = canvas.getBoundingClientRect();
+    isInteracting = true;
 
+    const rect = canvas.getBoundingClientRect();
     const mx = (e.clientX - rect.left) * (canvas.width / rect.width);
     const my = (e.clientY - rect.top) * (canvas.height / rect.height);
 
@@ -220,14 +242,22 @@ canvas.addEventListener('wheel', (e) => {
     scale = newScale;
 
     draw();
+
+    clearTimeout(window.zoomTimeout);
+    window.zoomTimeout = setTimeout(() => {
+        isInteracting = false;
+        draw();
+    }, 150);
 });
 
 
 // =====================
-// TOUCH CONTROL (PINCH + ROTATE)
+// TOUCH CONTROL
 // =====================
-canvas.addEventListener('touchstart', (e) => {
+canvas.addEventListener('touchstart', e => {
     if (!userImage) return;
+
+    isInteracting = true;
 
     if (e.touches.length === 1) {
         isDragging = true;
@@ -241,11 +271,11 @@ canvas.addEventListener('touchstart', (e) => {
     }
 });
 
-canvas.addEventListener('touchmove', (e) => {
+canvas.addEventListener('touchmove', e => {
     if (!userImage) return;
     e.preventDefault();
 
-    // drag
+    // DRAG
     if (e.touches.length === 1 && isDragging) {
         let x = e.touches[0].clientX;
         let y = e.touches[0].clientY;
@@ -257,72 +287,73 @@ canvas.addEventListener('touchmove', (e) => {
         lastY = y;
     }
 
-    // pinch + rotate
+    // PINCH (ZOOM + ROTATE)
     if (e.touches.length === 2) {
-		const rect = canvas.getBoundingClientRect();
+        const rect = canvas.getBoundingClientRect();
 
-		// posisi tengah pinch (screen → canvas)
-		const cx = ((e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left) * (canvas.width / rect.width);
-		const cy = ((e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top) * (canvas.height / rect.height);
+        const cx = ((e.touches[0].clientX + e.touches[1].clientX)/2 - rect.left) * (canvas.width / rect.width);
+        const cy = ((e.touches[0].clientY + e.touches[1].clientY)/2 - rect.top) * (canvas.height / rect.height);
 
-		// hitung jarak & sudut baru
-		const newDist = getDistance(e.touches);
-		const newAngle = getAngle(e.touches);
+        const newDist = getDistance(e.touches);
+        const newAngle = getAngle(e.touches);
 
-		// === SCALE ===
-		let scaleFactor = newDist / lastDistance;
-		let newScale = scale * scaleFactor;
-		newScale = Math.min(Math.max(0.2, newScale), 5);
-		scaleFactor = newScale / scale;
+        // ZOOM
+        let scaleFactor = newDist / lastDistance;
+        let newScale = Math.min(Math.max(0.2, scale * scaleFactor), 5);
+        scaleFactor = newScale / scale;
 
-		// === ROTATION ===
-		let deltaAngle = newAngle - lastAngle;
+        posX = cx - (cx - posX) * scaleFactor;
+        posY = cy - (cy - posY) * scaleFactor;
 
-		// normalisasi biar tidak loncat
-		if (deltaAngle > Math.PI) deltaAngle -= 2 * Math.PI;
-		if (deltaAngle < -Math.PI) deltaAngle += 2 * Math.PI;
+        scale = newScale;
 
-		let newRotation = rotation + deltaAngle;
+        // ROTATE (center image)
+        let deltaAngle = newAngle - lastAngle;
+        if (deltaAngle > Math.PI) deltaAngle -= 2*Math.PI;
+        if (deltaAngle < -Math.PI) deltaAngle += 2*Math.PI;
 
-		// === APPLY TRANSFORM DENGAN ANCHOR PINCH ===
-		// geser ke origin → transform → balik lagi
-		posX = cx - (cx - posX) * scaleFactor;
-		posY = cy - (cy - posY) * scaleFactor;
+        rotation += deltaAngle;
 
-		// rotasi terhadap center pinch
-		const dx = posX - cx;
-		const dy = posY - cy;
+        // SNAP + HAPTIC
+        const snap = Math.PI/2;
+        const threshold = 0.18;
 
-		const cos = Math.cos(deltaAngle);
-		const sin = Math.sin(deltaAngle);
+        const target = Math.round(rotation/snap)*snap;
+        const diff = target - rotation;
 
-		posX = cx + (dx * cos - dy * sin);
-		posY = cy + (dx * sin + dy * cos);
+        if (Math.abs(diff) < threshold) {
+            rotation += diff * 0.25;
+            snapActive = true;
+            snapAngle = target;
 
-		scale = newScale;
-		rotation = newRotation;
+            if (!hasVibrated && navigator.vibrate) {
+                navigator.vibrate(10);
+                hasVibrated = true;
+            }
+        } else {
+            snapActive = false;
+            hasVibrated = false;
+        }
 
-		// === SNAP ROTATION ===
-		const snap = Math.PI / 2;
-		const threshold = 0.12;
+        lastDistance = newDist;
+        lastAngle = newAngle;
+    }
 
-		const snapped = Math.round(rotation / snap) * snap;
-		if (Math.abs(rotation - snapped) < threshold) {
-			rotation = snapped;
-		}
-
-		lastDistance = newDist;
-		lastAngle = newAngle;
-	}
     draw();
 });
 
 canvas.addEventListener('touchend', () => {
     isDragging = false;
-    lastDistance = null;
-    lastAngle = null;
+    isInteracting = false;
+    snapActive = false;
+    hasVibrated = false;
+    draw();
 });
 
+
+// =====================
+// HELPERS
+// =====================
 function getDistance(touches) {
     return Math.hypot(
         touches[0].clientX - touches[1].clientX,
